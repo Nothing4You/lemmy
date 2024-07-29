@@ -48,7 +48,7 @@ async fn create_test_site(pool: &mut DbPool<'_>) -> Instance {
   // required
   let local_site_form = LocalSiteInsertForm::builder()
     .site_id(site.id)
-    .require_email_verification(Some(false))
+    .require_email_verification(Some(true))
     .registration_mode(Some(RegistrationMode::RequireApplication))
     .application_question(Some(".".to_string()))
     .build();
