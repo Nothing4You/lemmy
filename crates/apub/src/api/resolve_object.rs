@@ -66,44 +66,21 @@ async fn convert_response(
 
 #[cfg(test)]
 mod tests {
-  use crate::api::resolve_object::resolve_object;
-  use activitypub_federation::config::Data;
+  use crate::api::{resolve_object::resolve_object, test};
   use actix_web::web::Query;
   use lemmy_api_common::{context::LemmyContext, site::ResolveObject};
   use lemmy_db_schema::{
-    newtypes::InstanceId,
     source::{
       community::{Community, CommunityInsertForm},
       instance::Instance,
       local_site::{LocalSite, LocalSiteInsertForm},
-      local_user::{LocalUser, LocalUserInsertForm},
-      person::{Person, PersonInsertForm},
       post::{Post, PostInsertForm, PostUpdateForm},
       site::{Site, SiteInsertForm},
     },
     traits::Crud,
   };
-  use lemmy_db_views::structs::LocalUserView;
   use lemmy_utils::{error::LemmyResult, LemmyErrorType};
   use serial_test::serial;
-
-  async fn create_user(
-    instance_id: InstanceId,
-    name: String,
-    admin: bool,
-    context: &Data<LemmyContext>,
-  ) -> LemmyResult<LocalUserView> {
-    let person_form = PersonInsertForm::test_form(instance_id, &name);
-    let person = Person::create(&mut context.pool(), &person_form).await?;
-
-    let user_form = match admin {
-      true => LocalUserInsertForm::test_form_admin(person.id),
-      false => LocalUserInsertForm::test_form(person.id),
-    };
-    let local_user = LocalUser::create(&mut context.pool(), &user_form, vec![]).await?;
-
-    Ok(LocalUserView::read(&mut context.pool(), local_user.id).await?)
-  }
 
   #[tokio::test]
   #[serial]
@@ -123,9 +100,12 @@ mod tests {
     };
     LocalSite::create(&mut context.pool(), &local_site_form).await?;
 
-    let creator = create_user(instance.id, "creator".to_string(), false, &context).await?;
-    let regular_user = create_user(instance.id, "user".to_string(), false, &context).await?;
-    let admin_user = create_user(instance.id, "admin".to_string(), true, &context).await?;
+    let creator =
+      test::create_user(instance.id, "creator".to_string(), None, false, &context).await?;
+    let regular_user =
+      test::create_user(instance.id, "user".to_string(), None, false, &context).await?;
+    let admin_user =
+      test::create_user(instance.id, "admin".to_string(), None, true, &context).await?;
 
     //let community_insert_form = ;
     let community = Community::create(
