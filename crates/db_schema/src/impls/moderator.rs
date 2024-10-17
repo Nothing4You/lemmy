@@ -538,13 +538,12 @@ mod tests {
 
     let inserted_instance = Instance::read_or_create(pool, "my_domain.tld".to_string()).await?;
 
-    let new_mod = PersonInsertForm::test_form(inserted_instance.id, "the mod");
-
-    let inserted_mod = Person::create(pool, &new_mod).await?;
-
-    let new_person = PersonInsertForm::test_form(inserted_instance.id, "jim2");
-
-    let inserted_person = Person::create(pool, &new_person).await?;
+    let inserted_mod = PersonInsertForm::simple_test_form(inserted_instance.id, None)
+      .submit(pool)
+      .await?;
+    let inserted_person = PersonInsertForm::simple_test_form(inserted_instance.id, None)
+      .submit(pool)
+      .await?;
 
     let new_community = CommunityInsertForm::new(
       inserted_instance.id,

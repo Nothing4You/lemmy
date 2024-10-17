@@ -141,6 +141,15 @@ impl PersonInsertForm {
   pub fn test_form(instance_id: InstanceId, name: &str) -> Self {
     Self::new(name.to_owned(), "pubkey".to_string(), instance_id)
   }
+
+  pub fn simple_test_form(instance_id: InstanceId, name: Option<&str>) -> Self {
+    let name = name.map_or_else(|| uuid::Uuid::new_v4().to_string(), ToString::to_string);
+    Self::new(name.to_string(), "pubkey".to_string(), instance_id)
+  }
+
+  pub async fn submit(&self, pool: &mut DbPool<'_>) -> Result<Person, Error> {
+    Person::create(pool, self).await
+  }
 }
 
 #[async_trait]
@@ -257,9 +266,9 @@ mod tests {
 
     let inserted_instance = Instance::read_or_create(pool, "my_domain.tld".to_string()).await?;
 
-    let new_person = PersonInsertForm::test_form(inserted_instance.id, "holly");
-
-    let inserted_person = Person::create(pool, &new_person).await?;
+    let inserted_person = PersonInsertForm::simple_test_form(inserted_instance.id, Some("holly"))
+      .submit(pool)
+      .await?;
 
     let expected_person = Person {
       id: inserted_person.id,
@@ -311,10 +320,12 @@ mod tests {
     let pool = &mut pool.into();
     let inserted_instance = Instance::read_or_create(pool, "my_domain.tld".to_string()).await?;
 
-    let person_form_1 = PersonInsertForm::test_form(inserted_instance.id, "erich");
-    let person_1 = Person::create(pool, &person_form_1).await?;
-    let person_form_2 = PersonInsertForm::test_form(inserted_instance.id, "michele");
-    let person_2 = Person::create(pool, &person_form_2).await?;
+    let person_1 = PersonInsertForm::simple_test_form(inserted_instance.id, None)
+      .submit(pool)
+      .await?;
+    let person_2 = PersonInsertForm::simple_test_form(inserted_instance.id, None)
+      .submit(pool)
+      .await?;
 
     let follow_form = PersonFollowerForm {
       person_id: person_1.id,

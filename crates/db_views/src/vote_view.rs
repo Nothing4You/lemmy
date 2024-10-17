@@ -84,14 +84,13 @@ impl VoteView {
 
 #[cfg(test)]
 mod tests {
-
   use crate::structs::VoteView;
   use lemmy_db_schema::{
     source::{
       comment::{Comment, CommentInsertForm, CommentLike, CommentLikeForm},
       community::{Community, CommunityInsertForm, CommunityPersonBan, CommunityPersonBanForm},
       instance::Instance,
-      person::{Person, PersonInsertForm},
+      person::PersonInsertForm,
       post::{Post, PostInsertForm, PostLike, PostLikeForm},
     },
     traits::{Bannable, Crud, Likeable},
@@ -109,13 +108,12 @@ mod tests {
 
     let inserted_instance = Instance::read_or_create(pool, "my_domain.tld".to_string()).await?;
 
-    let new_person = PersonInsertForm::test_form(inserted_instance.id, "timmy_vv");
-
-    let inserted_timmy = Person::create(pool, &new_person).await?;
-
-    let new_person_2 = PersonInsertForm::test_form(inserted_instance.id, "sara_vv");
-
-    let inserted_sara = Person::create(pool, &new_person_2).await?;
+    let inserted_timmy = PersonInsertForm::simple_test_form(inserted_instance.id, None)
+      .submit(pool)
+      .await?;
+    let inserted_sara = PersonInsertForm::simple_test_form(inserted_instance.id, None)
+      .submit(pool)
+      .await?;
 
     let new_community = CommunityInsertForm::new(
       inserted_instance.id,

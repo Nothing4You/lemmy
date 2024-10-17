@@ -22,7 +22,7 @@ use lemmy_db_schema::{
     local_site::{LocalSite, LocalSiteInsertForm},
     local_site_rate_limit::{LocalSiteRateLimit, LocalSiteRateLimitInsertForm},
     local_user::{LocalUser, LocalUserInsertForm, LocalUserUpdateForm},
-    person::{Person, PersonInsertForm},
+    person::PersonInsertForm,
     registration_application::{RegistrationApplication, RegistrationApplicationInsertForm},
     site::{Site, SiteInsertForm},
   },
@@ -39,11 +39,9 @@ async fn create_test_site(context: &Data<LemmyContext>) -> LemmyResult<(Instance
 
   let inserted_instance = Instance::read_or_create(pool, "my_domain.tld".to_string()).await?;
 
-  let admin_person = Person::create(
-    pool,
-    &PersonInsertForm::test_form(inserted_instance.id, "admin"),
-  )
-  .await?;
+  let admin_person = PersonInsertForm::simple_test_form(inserted_instance.id, None)
+    .submit(pool)
+    .await?;
   LocalUser::create(
     pool,
     &LocalUserInsertForm::test_form_admin(admin_person.id),
@@ -78,11 +76,11 @@ async fn create_test_site(context: &Data<LemmyContext>) -> LemmyResult<(Instance
 async fn signup(
   pool: &mut DbPool<'_>,
   instance_id: InstanceId,
-  name: &str,
   email: Option<&str>,
 ) -> LemmyResult<(LocalUser, RegistrationApplication)> {
-  let person_insert_form = PersonInsertForm::test_form(instance_id, name);
-  let person = Person::create(pool, &person_insert_form).await?;
+  let person = PersonInsertForm::simple_test_form(instance_id, None)
+    .submit(pool)
+    .await?;
 
   let local_user_insert_form = match email {
     Some(email) => LocalUserInsertForm {
@@ -146,7 +144,7 @@ async fn test_application_approval() -> LemmyResult<()> {
   let mut expected_unread_applications = 0u8;
 
   let (local_user_with_email, app_with_email) =
-    signup(pool, instance.id, "user_w_email", Some("lemmy@localhost")).await?;
+    signup(pool, instance.id, Some("lemmy@localhost")).await?;
 
   let (application_count, unread_applications, all_applications) =
     get_application_statuses(&context, admin_local_user_view.clone()).await?;
@@ -239,13 +237,7 @@ async fn test_application_approval() -> LemmyResult<()> {
       .accepted_application
   );
 
-  let (_local_user, app_with_email_2) = signup(
-    pool,
-    instance.id,
-    "user_w_email_2",
-    Some("lemmy2@localhost"),
-  )
-  .await?;
+  let (_local_user, app_with_email_2) = signup(pool, instance.id, Some("lemmy2@localhost")).await?;
   let (application_count, unread_applications, all_applications) =
     get_application_statuses(&context, admin_local_user_view.clone()).await?;
 
@@ -326,7 +318,7 @@ async fn test_application_approval() -> LemmyResult<()> {
     expected_total_applications,
   );
 
-  signup(pool, instance.id, "user_wo_email", None).await?;
+  signup(pool, instance.id, None).await?;
 
   expected_total_applications += 1;
   expected_unread_applications += 1;
@@ -348,7 +340,7 @@ async fn test_application_approval() -> LemmyResult<()> {
     expected_total_applications,
   );
 
-  signup(pool, instance.id, "user_w_email_3", None).await?;
+  signup(pool, instance.id, None).await?;
 
   expected_total_applications += 1;
   expected_unread_applications += 1;
