@@ -1,0 +1,176 @@
+name: Build hotfix container images
+
+on:
+  push:
+    tags:
+      - 0.1*-n4y.h*
+      - 0.1*-n4y-test.h*
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
+      annotations: ${{ steps.meta.outputs.annotations }}
+      json: ${{ steps.meta.outputs.json }}
+      image-name: ${{ steps.custom-meta.outputs.image-name }}
+      tag-name: ${{ steps.custom-meta.outputs.tag-name }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          context: workflow
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
+          tags: |
+            type=ref,event=tag
+            type=sha,format=long,priority=101
+            type=sha,format=short
+
+      - name: Extract image name
+        id: custom-meta
+        run: |
+          echo "image-name=${DOCKER_TAG%%:*}" | tee -a $GITHUB_OUTPUT
+          echo "tag-name=${DOCKER_TAG##*:}" | tee -a $GITHUB_OUTPUT
+        env:
+          DOCKER_TAG: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    needs:
+      - meta
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+
+    env:
+      REGISTRY_IMAGE: ${{ needs.meta.outputs.image-name }}
+
+    steps:
+      - name: Prepare
+        id: meta
+        run: |
+          platform=${{ matrix.platform }}
+          echo "platform-pair=${platform//\//-}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout Git repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          show-progress: false
+          submodules: recursive
+
+      - name: Build Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: |
+            RUST_RELEASE_MODE=release
+          platforms: ${{ matrix.platform }}
+          labels: ${{ needs.meta.outputs.labels }}
+          annotations: ${{ needs.meta.outputs.annotations }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+        env:
+          SOURCE_DATE_EPOCH: 0
+
+      - name: Export image digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ steps.meta.outputs.platform-pair }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    needs:
+      - meta
+      - build
+
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      REGISTRY_IMAGE: ${{ needs.meta.outputs.image-name }}
+      IMAGE_TAG: ${{ needs.meta.outputs.tag-name }}
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+        env:
+          DOCKER_METADATA_OUTPUT_JSON: ${{ needs.meta.outputs.json }}
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ env.IMAGE_TAG }}
