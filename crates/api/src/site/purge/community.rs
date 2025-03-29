@@ -2,10 +2,9 @@ use activitypub_federation::config::Data;
 use actix_web::web::Json;
 use lemmy_api_common::{
   context::LemmyContext,
-  request::purge_image_from_pictrs,
   send_activity::{ActivityChannel, SendActivityData},
   site::PurgeCommunity,
-  utils::{is_admin, purge_image_posts_for_community},
+  utils::is_admin,
   SuccessResponse,
 };
 use lemmy_db_schema::{
@@ -31,16 +30,6 @@ pub async fn purge_community(
   let community = Community::read(&mut context.pool(), data.community_id)
     .await?
     .ok_or(LemmyErrorType::CouldntFindCommunity)?;
-
-  if let Some(banner) = &community.banner {
-    purge_image_from_pictrs(banner, &context).await.ok();
-  }
-
-  if let Some(icon) = &community.icon {
-    purge_image_from_pictrs(icon, &context).await.ok();
-  }
-
-  purge_image_posts_for_community(data.community_id, &context).await?;
 
   Community::delete(&mut context.pool(), data.community_id).await?;
 
