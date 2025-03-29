@@ -686,6 +686,8 @@ pub async fn remove_user_data(
   // Posts
   Post::update_removed_for_creator(pool, banned_person_id, None, true).await?;
 
+  delete_local_user_images(banned_person_id, context).await?;
+
   // Communities
   // Remove all communities where they're the top mod
   // for now, remove the communities manually
