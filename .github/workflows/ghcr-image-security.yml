@@ -90,10 +90,29 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Checkout Git repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          show-progress: false
+          submodules: recursive
+
+      - name: Strip security mention from Git tag used in application version
+        run: |
+          set -x
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          old_tag="$(git describe --exact-match --tags)"
+          new_tag="${old_tag/-security/-n}"
+          git tag "$new_tag" "$old_tag"
+          git tag -d "$old_tag"
+
       - name: Build Docker image
         id: build
         uses: docker/build-push-action@v5
         with:
+          context: .
           file: docker/Dockerfile
           build-args: |
             RUST_RELEASE_MODE=release
