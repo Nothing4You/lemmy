@@ -27,14 +27,13 @@ use diesel_async::{
     AsyncDieselConnectionManager,
     ManagerConfig,
   },
-  scoped_futures::ScopedBoxFuture,
   AsyncConnection,
 };
 use futures_util::{future::BoxFuture, FutureExt};
 use i_love_jesus::{CursorKey, PaginatedQueryBuilder, SortDirection};
 use lemmy_db_schema_file::schema_setup;
 use lemmy_utils::{
-  error::{LemmyError, LemmyErrorExt, LemmyErrorType, LemmyResult},
+  error::{LemmyErrorExt, LemmyErrorType, LemmyResult},
   settings::SETTINGS,
   utils::validation::clean_url,
 };
@@ -91,19 +90,14 @@ pub async fn get_conn<'a, 'b: 'a>(pool: &'a mut DbPool<'b>) -> Result<DbConn<'a>
   })
 }
 
-impl DbConn<'_> {
-  pub async fn run_transaction<'a, R, F>(&mut self, callback: F) -> LemmyResult<R>
-  where
-    F: for<'r> FnOnce(&'r mut AsyncPgConnection) -> ScopedBoxFuture<'a, 'r, LemmyResult<R>>
-      + Send
-      + 'a,
-    R: Send + 'a,
-  {
-    self
-      .deref_mut()
-      .transaction::<_, LemmyError, _>(callback)
-      .await
-  }
+#[macro_export]
+macro_rules! run_transaction {
+  ($conn:ident => $expr:block) => {
+    ::diesel_async::AsyncConnection::transaction::<_, ::lemmy_utils::error::LemmyError, _>(
+      $conn,
+      |$conn| async move $expr.scope_boxed()
+    )
+  };
 }
 
 impl Deref for DbConn<'_> {

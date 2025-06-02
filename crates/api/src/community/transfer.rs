@@ -7,6 +7,7 @@ use lemmy_api_common::{
   utils::{check_community_user_action, is_admin, is_top_mod},
 };
 use lemmy_db_schema::{
+  run_transaction,
   source::{
     community::{Community, CommunityActions, CommunityModeratorForm},
     mod_log::moderator::{ModTransferCommunity, ModTransferCommunityForm},
@@ -57,34 +58,30 @@ pub async fn transfer_community(
   let pool = &mut context.pool();
   let conn = &mut get_conn(pool).await?;
   let tx_data = data.clone();
-  conn
-    .run_transaction(|conn| {
-      async move {
-        CommunityActions::delete_mods_for_community(&mut conn.into(), community_id).await?;
+  run_transaction!(conn => {
+    CommunityActions::delete_mods_for_community(&mut conn.into(), community_id).await?;
 
-        // TODO: this should probably be a bulk operation
-        // Re-add the mods, in the new order
-        for cmod in &community_mods {
-          let community_moderator_form =
-            CommunityModeratorForm::new(cmod.community.id, cmod.moderator.id);
+    // TODO: this should probably be a bulk operation
+    // Re-add the mods, in the new order
+    for cmod in &community_mods {
+      let community_moderator_form =
+        CommunityModeratorForm::new(cmod.community.id, cmod.moderator.id);
 
-          CommunityActions::join(&mut conn.into(), &community_moderator_form).await?;
-        }
+      CommunityActions::join(&mut conn.into(), &community_moderator_form).await?;
+    }
 
-        // Mod tables
-        let form = ModTransferCommunityForm {
-          mod_person_id: local_user_view.person.id,
-          other_person_id: tx_data.person_id,
-          community_id: tx_data.community_id,
-        };
+    // Mod tables
+    let form = ModTransferCommunityForm {
+      mod_person_id: local_user_view.person.id,
+      other_person_id: tx_data.person_id,
+      community_id: tx_data.community_id,
+    };
 
-        ModTransferCommunity::create(&mut conn.into(), &form).await?;
+    ModTransferCommunity::create(&mut conn.into(), &form).await?;
 
-        Ok(())
-      }
-      .scope_boxed()
-    })
-    .await?;
+    Ok(())
+  })
+  .await?;
 
   let community_id = data.community_id;
   let community_view = CommunityView::read(

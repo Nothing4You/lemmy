@@ -7,6 +7,7 @@ use lemmy_api_common::{
   send_activity::{ActivityChannel, SendActivityData},
 };
 use lemmy_db_schema::{
+  run_transaction,
   source::community::{CommunityActions, CommunityBlockForm},
   traits::{Blockable, Followable},
   utils::get_conn,
@@ -27,25 +28,21 @@ pub async fn user_block_community(
   let pool = &mut context.pool();
   let conn = &mut get_conn(pool).await?;
   let tx_data = data.clone();
-  conn
-    .run_transaction(|conn| {
-      async move {
-        if tx_data.block {
-          CommunityActions::block(&mut conn.into(), &community_block_form).await?;
+  run_transaction!(conn => {
+    if tx_data.block {
+      CommunityActions::block(&mut conn.into(), &community_block_form).await?;
 
-          // Also, unfollow the community, and send a federated unfollow
-          CommunityActions::unfollow(&mut conn.into(), person_id, tx_data.community_id)
-            .await
-            .ok();
-        } else {
-          CommunityActions::unblock(&mut conn.into(), &community_block_form).await?;
-        }
+      // Also, unfollow the community, and send a federated unfollow
+      CommunityActions::unfollow(&mut conn.into(), person_id, tx_data.community_id)
+        .await
+        .ok();
+    } else {
+      CommunityActions::unblock(&mut conn.into(), &community_block_form).await?;
+    }
 
-        Ok(())
-      }
-      .scope_boxed()
-    })
-    .await?;
+    Ok(())
+  })
+  .await?;
 
   let community_view = CommunityView::read(
     &mut context.pool(),

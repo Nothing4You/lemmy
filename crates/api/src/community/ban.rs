@@ -12,6 +12,7 @@ use lemmy_api_common::{
   },
 };
 use lemmy_db_schema::{
+  run_transaction,
   source::{
     community::{Community, CommunityActions, CommunityPersonBanForm},
     local_user::LocalUser,
@@ -57,51 +58,47 @@ pub async fn ban_from_community(
   let pool = &mut context.pool();
   let conn = &mut get_conn(pool).await?;
   let tx_data = data.clone();
-  conn
-    .run_transaction(|conn| {
-      async move {
-        if tx_data.ban {
-          CommunityActions::ban(&mut conn.into(), &community_user_ban_form).await?;
+  run_transaction!(conn => {
+    if tx_data.ban {
+      CommunityActions::ban(&mut conn.into(), &community_user_ban_form).await?;
 
-          // Also unsubscribe them from the community, if they are subscribed
-          CommunityActions::unfollow(&mut conn.into(), banned_person_id, tx_data.community_id)
-            .await
-            .ok();
-        } else {
-          CommunityActions::unban(&mut conn.into(), &community_user_ban_form).await?;
-        }
+      // Also unsubscribe them from the community, if they are subscribed
+      CommunityActions::unfollow(&mut conn.into(), banned_person_id, tx_data.community_id)
+        .await
+        .ok();
+    } else {
+      CommunityActions::unban(&mut conn.into(), &community_user_ban_form).await?;
+    }
 
-        // Remove/Restore their data if that's desired
-        if tx_data.remove_or_restore_data.unwrap_or(false) {
-          let remove_data = tx_data.ban;
-          remove_or_restore_user_data_in_community(
-            tx_data.community_id,
-            local_user_view.person.id,
-            banned_person_id,
-            remove_data,
-            &tx_data.reason,
-            &mut conn.into(),
-          )
-          .await?;
-        };
+    // Remove/Restore their data if that's desired
+    if tx_data.remove_or_restore_data.unwrap_or(false) {
+      let remove_data = tx_data.ban;
+      remove_or_restore_user_data_in_community(
+        tx_data.community_id,
+        local_user_view.person.id,
+        banned_person_id,
+        remove_data,
+        &tx_data.reason,
+        &mut conn.into(),
+      )
+      .await?;
+    };
 
-        // Mod tables
-        let form = ModBanFromCommunityForm {
-          mod_person_id: local_user_view.person.id,
-          other_person_id: tx_data.person_id,
-          community_id: tx_data.community_id,
-          reason: tx_data.reason.clone(),
-          banned: Some(tx_data.ban),
-          expires,
-        };
+    // Mod tables
+    let form = ModBanFromCommunityForm {
+      mod_person_id: local_user_view.person.id,
+      other_person_id: tx_data.person_id,
+      community_id: tx_data.community_id,
+      reason: tx_data.reason.clone(),
+      banned: Some(tx_data.ban),
+      expires,
+    };
 
-        ModBanFromCommunity::create(&mut conn.into(), &form).await?;
+    ModBanFromCommunity::create(&mut conn.into(), &form).await?;
 
-        Ok(())
-      }
-      .scope_boxed()
-    })
-    .await?;
+    Ok(())
+  })
+  .await?;
 
   let person_view = PersonView::read(
     &mut context.pool(),
