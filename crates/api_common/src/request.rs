@@ -49,6 +49,7 @@ pub fn client_builder(settings: &Settings) -> ClientBuilder {
     .timeout(REQWEST_TIMEOUT)
     .connect_timeout(REQWEST_TIMEOUT)
     .redirect(Policy::none())
+    .http1_only()
 }
 
 /// Fetches metadata for the given link and optionally generates thumbnail.
